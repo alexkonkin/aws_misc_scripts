@@ -1,3 +1,5 @@
+#!/usr/bin/env python3.6
+
 import os
 import boto3
 import botocore
@@ -8,7 +10,6 @@ import json
 
 parser = argparse.ArgumentParser(description='Copy recent version of domains to deploy folder')
 parser.add_argument('-b','--bucket', help='name of the NaaS bucket', required=True)
-parser.add_argument('-d','--delete', help='delete deploy folder before copy', required=True)
 args = parser.parse_args()
 
 valid_files = ['architecture.json', 'encodings.json', 'metrics.json', 'model_weights.h5']
@@ -25,6 +26,9 @@ except botocore.exceptions.ClientError as e:
     exit (1)
 else:
   print ("The bucket %s exists" % args.bucket)
+
+bucket = s3.Bucket(args.bucket)
+bucket.objects.filter(Prefix="deploy/").delete()
 
 client = boto3.client('s3')
 prefix = 'models'
@@ -67,7 +71,7 @@ for domain in domains:
   recent_version.append(current_object)
 
 for f in recent_version:
-  current_category_files=[]
+  print ('---------------------')
   domain_is_valid = True
   print(f.last_modified, f.key)
   content_object = s3.Object(args.bucket, f.key)
@@ -75,6 +79,7 @@ for f in recent_version:
   categories= json.loads(file_content)['models']
   print (categories)
   for category in categories:
+    current_category_files=[]
     category_path = f.key.rpartition('ma_resultset.json')[0]
     for key in client.list_objects(Bucket=args.bucket, Prefix=category_path+category+'/', Delimiter='/')['Contents']:
       current_category_files.append(os.path.basename(key['Key']))
@@ -89,8 +94,19 @@ for f in recent_version:
 
   if domain_is_valid == True:
     print ('Domain is valid '+ f.key)
+    print (os.path.dirname(os.path.dirname(f.key)))
+#    copy_source = { 'Bucket': args.bucket, 'Key': f.key }
+#    print (f.key)
+#    print ('deploy/' + os.path.relpath(f.key, os.path.dirname(os.path.dirname(os.path.dirname(f.key)))+'/'))
+#    s3.meta.client.copy(copy_source, args.bucket, 'deploy/' + os.path.basename(os.path.dirname(f.key))+'/'+ os.path.relpath(f.key, os.path.dirname(os.path.dirname(f.key))))
+    objs = bucket.objects.filter(Prefix=os.path.dirname(f.key))
+    for obj in objs:
+      print ('copy from location : ' + obj.key)
+      print ('to location : ' + 'deploy/'+ os.path.basename(os.path.dirname(os.path.dirname(f.key)))  +'/'+ os.path.relpath(obj.key, os.path.dirname(f.key)))
+      s3.meta.client.copy({'Bucket': args.bucket, 'Key': obj.key}, args.bucket, 'deploy/'+ os.path.basename(os.path.dirname(os.path.dirname(f.key)))  +'/'+ os.path.relpath(obj.key, os.path.dirname(f.key)))
   else:
     print ('Domain is not valid '+ f.key)
+
 
 print ('---------')
 
